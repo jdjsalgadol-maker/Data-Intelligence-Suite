@@ -5,126 +5,95 @@ import plotly.express as px
 from fpdf import FPDF
 import os
 
-# --- CONFIGURACIÓN DE SESIÓN ---
-if 'analisis_resultado' not in st.session_state:
-    st.session_state.analisis_resultado = "Aún no se ha generado un análisis."
-if 'grafico_guardado' not in st.session_state:
-    st.session_state.grafico_guardado = None
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Analizador de Tendencias", layout="wide")
 
-# --- FUNCIÓN DE PDF MEJORADA ---
-def crear_pdf(hoja, metrica, resumen_dict, img_path):
+# --- MEMORIA DE SESIÓN ---
+if 'resumen_stats' not in st.session_state:
+    st.session_state.resumen_stats = None
+if 'img_path' not in st.session_state:
+    st.session_state.img_path = None
+
+# --- FUNCIÓN PDF ---
+def exportar_pdf(hoja, resumen, img):
     pdf = FPDF()
     pdf.add_page()
-    
-    # Título
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, "Reporte de Tendencias e Inteligencia", ln=True, align='C')
-    pdf.ln(5)
+    pdf.cell(200, 10, f"Reporte de Tendencia: {hoja}", ln=True, align='C')
+    pdf.ln(10)
     
-    # Información General
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 10, f"Pestaña analizada: {hoja}", ln=True)
-    pdf.cell(0, 10, f"Métrica principal: {metrica}", ln=True)
-    pdf.ln(5)
-    
-    # Datos Estadísticos
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "1. Resumen Estadistico:", ln=True)
+    pdf.cell(0, 10, "Analisis Estadistico del Valor:", ln=True)
     pdf.set_font("Arial", '', 10)
-    if isinstance(resumen_dict, dict):
-        for k, v in resumen_dict.items():
+    if resumen:
+        for k, v in resumen.items():
             pdf.cell(0, 8, f"- {k}: {v:,.2f}", ln=True)
     
-    # Gráfico de Tendencia
-    if img_path and os.path.exists(img_path):
-        pdf.ln(5)
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, "2. Grafico de Tendencia Temporal (Año-Mes):", ln=True)
-        pdf.image(img_path, x=15, y=None, w=180)
-    
+    if img and os.path.exists(img):
+        pdf.ln(10)
+        pdf.image(img, x=15, w=180)
+        
     return pdf.output(dest='S').encode('latin-1')
 
-# --- INTERFAZ ---
-st.title("📊 Analizador de Tendencias Temporales")
+st.title("📈 Análisis Automático de Valor vs Fecha")
 
 archivo = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
 
 if archivo:
     xl = pd.ExcelFile(archivo)
-    hoja = st.sidebar.selectbox("Selecciona Pestaña", xl.sheet_names)
-    
-    # Carga de datos
+    hoja = st.sidebar.selectbox("Selecciona la pestaña", xl.sheet_names)
     df = pd.read_excel(archivo, sheet_name=hoja)
-    
-    # Identificar fechas y números
-    for col in df.columns:
-        if df[col].dtype == 'object':
-            try:
-                df[col] = pd.to_datetime(df[col])
-            except: pass
-            
-    date_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
-    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
-    if date_cols and num_cols:
-        col_fecha = st.sidebar.selectbox("Columna de Tiempo", date_cols)
-        col_valor = st.sidebar.selectbox("Columna de Valor", num_cols)
+    # 1. IDENTIFICACIÓN AUTOMÁTICA RÍGIDA
+    # Buscamos columnas que contengan 'fecha' y 'valor' ignorando mayúsculas
+    col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
+    col_valor = next((c for c in df.columns if 'valor' in c.lower()), None)
 
-        # PREPROCESAMIENTO: Ordenar y formatear Eje X (Año-Mes)
-        df = df.sort_values(col_fecha)
-        df['Periodo'] = df[col_fecha].dt.strftime('%Y-%m') # Formato: 2024-01, 2024-02...
+    if col_fecha and col_valor:
+        st.sidebar.success(f"Detectado: {col_fecha} y {col_valor}")
         
-        # Agrupar por mes para que la línea de tendencia sea clara
-        df_mensual = df.groupby('Periodo')[col_valor].sum().reset_index()
+        # Preprocesamiento de fechas
+        df[col_fecha] = pd.to_datetime(df[col_fecha])
+        df = df.sort_values(col_fecha)
+        
+        # Agrupación por Año-Mes para limpiar el gráfico de líneas
+        df['Año-Mes'] = df[col_fecha].dt.strftime('%Y-%m')
+        df_mensual = df.groupby('Año-Mes')[col_valor].sum().reset_index()
 
-        st.write(f"### Análisis de {col_valor} por {col_fecha}")
-        st.dataframe(df_mensual.head())
+        # --- BOTONES DE ACCIÓN ---
+        c1, c2 = st.columns(2)
 
-        col_btn1, col_btn2 = st.columns(2)
+        with c1:
+            if st.button("📈 Generar Línea de Tendencia"):
+                # Gráfico de líneas con regresión lineal (OLS)
+                # Usamos scatter con modo líneas para incluir la tendencia de statsmodels
+                fig = px.scatter(df_mensual, x='Año-Mes', y=col_valor, 
+                                 trendline="ols", 
+                                 title=f"Evolución Mensual y Tendencia de {col_valor}")
+                
+                # Forzar que los puntos se unan con una línea
+                fig.data[0].update(mode='lines+markers')
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Guardar para el PDF
+                fig.write_image("chart_export.png")
+                st.session_state.img_path = "chart_export.png"
 
-        # BOTÓN 1: GRÁFICO CON LÍNEA DE TENDENCIA
-        if col_btn1.button("📈 Generar Grafico de Tendencia"):
-            # Creamos el gráfico con línea de tendencia (OLS)
-            # Usamos scatter + trendline para que Plotly dibuje la regresión
-            fig = px.scatter(df_mensual, x='Periodo', y=col_valor, 
-                             trendline="ols", 
-                             title=f"Tendencia Temporal: {col_valor}",
-                             labels={'Periodo': 'Año-Mes', col_valor: 'Total'})
-            
-            # Convertimos los puntos en una línea continua para mejor visualización
-            fig.data[0].update(mode='lines+markers') 
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Guardar imagen para el PDF
-            fig.write_image("tendencia_temp.png")
-            st.session_state.grafico_guardado = "tendencia_temp.png"
-            st.success("Gráfico de tendencia generado y guardado para el reporte.")
-
-        # BOTÓN 2: DESCRIPCIÓN
-        if col_btn2.button("📝 Descripción Analisis"):
-            stats = df_mensual[col_valor].describe().to_dict()
-            st.session_state.analisis_resultado = stats
-            st.write("**Resumen Estadístico Mensual:**")
-            st.write(stats)
+        with c2:
+            if st.button("📝 Generar Descripción"):
+                stats = df_mensual[col_valor].describe().to_dict()
+                st.session_state.resumen_stats = stats
+                st.write("**Estadísticas del Valor:**")
+                st.write(stats)
 
         # --- EXPORTACIÓN ---
         st.divider()
-        if st.button("📄 Descargar Informe Final PDF"):
-            if st.session_state.grafico_guardado:
-                pdf_bytes = crear_pdf(
-                    hoja, 
-                    col_valor, 
-                    st.session_state.analisis_resultado, 
-                    st.session_state.grafico_guardado
-                )
-                st.download_button(
-                    label="⬇️ Descargar Reporte PDF",
-                    data=pdf_bytes,
-                    file_name=f"Analisis_Tendencia_{hoja}.pdf",
-                    mime="application/pdf"
-                )
+        if st.button("📄 Descargar Reporte en PDF"):
+            if st.session_state.img_path:
+                pdf_bytes = exportar_pdf(hoja, st.session_state.resumen_stats, st.session_state.img_path)
+                st.download_button("⬇️ Guardar PDF", pdf_bytes, f"Analisis_{hoja}.pdf")
             else:
-                st.error("Primero genera el gráfico para poder incluirlo en el PDF.")
+                st.error("Primero genera el gráfico para poder exportar.")
     else:
-        st.warning("El archivo necesita al menos una columna de fecha y una de valor.")
+        st.error("No se encontraron las columnas 'fecha' y 'valor' en esta pestaña.")
