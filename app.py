@@ -27,7 +27,7 @@ def generar_pdf(analisis_texto, esc_plus, esc_minus, nombre_hoja):
     pdf.cell(0, 10, f"Escenario -10%: {esc_minus:,.2f}", ln=True)
     return pdf.output(dest='S').encode('latin-1')
 
-st.title("🚀 Suite de Inteligencia de Datos (Optimizado)")
+st.title("🚀 Suite de Inteligencia de Datos")
 
 archivo = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
 
