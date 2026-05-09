@@ -2,6 +2,5 @@ streamlit
 pandas
 plotly
 openpyxl
-statsmodels
 fpdf
 kaleido
