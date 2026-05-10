@@ -1,5 +1,4 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-
-# Todo el código que desarrollamos anteriormente va aquí...
+streamlit
+pandas
+plotly
+openpyxl
