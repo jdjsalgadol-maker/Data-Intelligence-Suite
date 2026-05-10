@@ -1,7 +1,5 @@
-streamlit
-pandas
-plotly
-openpyxl
-fpdf
-kaleido
-statsmodels
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+# Todo el código que desarrollamos anteriormente va aquí...
