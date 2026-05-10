@@ -1,131 +1,69 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
-from fpdf import FPDF
-import os
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Financial Intelligence Dashboard", layout="wide")
+# Configuración de la interfaz
+st.set_page_config(page_title="Analizador Bancario", layout="wide")
 
-# Estilos CSS para las tarjetas de métricas
-st.markdown("""
-    <style>
-    [data-testid="stMetricValue"] { font-size: 30px; color: #2E86C1; }
-    .main { background-color: #F4F6F7; }
-    div.stButton > button:first-child {
-        background-color: #2E86C1; color: white; border-radius: 10px; height: 3em; width: 100%;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("🏦 Análisis de Costos por Entidad")
+st.markdown("Carga tu reporte para analizar el comportamiento mensual de los costos.")
 
-# --- FUNCIONALIDAD PDF ---
-def generar_reporte_pdf(hoja, banco, stats, img_path):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, f"Reporte Financiero: {banco}", ln=True, align='C')
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(200, 10, f"Pestaña: {hoja}", ln=True, align='C')
-    pdf.ln(10)
-    
-    if stats:
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, "Indicadores del Periodo:", ln=True)
-        pdf.set_font("Arial", '', 10)
-        for k, v in stats.items():
-            pdf.cell(0, 8, f"- {k.capitalize()}: {v:,.2f}", ln=True)
-            
-    if img_path and os.path.exists(img_path):
-        pdf.ln(10)
-        pdf.image(img_path, x=10, w=190)
-    return pdf.output(dest='S').encode('latin-1')
-
-# --- LÓGICA PRINCIPAL ---
-st.title("🏦 Dashboard de Análisis Bancario")
-archivo = st.file_uploader("Carga el archivo de movimientos bancarios", type=["xlsx"])
+# Carga de archivos
+archivo = st.file_uploader("Sube tu archivo (Excel o CSV)", type=["xlsx", "csv"])
 
 if archivo:
-    xl = pd.ExcelFile(archivo)
-    hoja_sel = st.sidebar.selectbox("Selecciona la pestaña", xl.sheet_names)
-    
-    # Carga de datos (Columnas B=1, D=3, G=6)
-    # Nota: Usamos nombres o índices para asegurar que lea B, D y G
-    df = pd.read_excel(archivo, sheet_name=hoja_sel)
-    
-    # Mapeo manual basado en tu descripción
-    # Columna B (Banco), D (Fecha), G (Valor)
     try:
-        df_final = pd.DataFrame({
-            'Banco': df.iloc[:, 1],  # Columna B
-            'Fecha': pd.to_datetime(df.iloc[:, 3]), # Columna D
-            'Valor': pd.to_numeric(df.iloc[:, 6], errors='coerce') # Columna G
-        }).dropna(subset=['Fecha', 'Valor'])
+        # Leemos el archivo
+        if archivo.name.endswith('xlsx'):
+            df = pd.read_excel(archivo)
+        else:
+            df = pd.read_csv(archivo)
+
+        # Mapeo de columnas por posición (B=1, D=3, G=6)
+        # Usamos iloc para asegurar que tomamos las columnas correctas sin importar el nombre
+        analisis_df = pd.DataFrame({
+            'Banco': df.iloc[:, 1],
+            'Fecha': pd.to_datetime(df.iloc[:, 3]),
+            'Costo': pd.to_numeric(df.iloc[:, 6], errors='coerce')
+        })
+
+        # Limpieza: eliminamos filas con datos nulos en columnas críticas
+        analisis_df = analisis_df.dropna(subset=['Fecha', 'Costo'])
+
+        # Agrupación mes a mes
+        analisis_df['Mes'] = analisis_df['Fecha'].dt.to_period('M').astype(str)
+        df_mensual = analisis_df.groupby(['Mes', 'Banco'])['Costo'].sum().reset_index()
+
+        # --- Visualización ---
+        st.subheader("📈 Comportamiento Mensual")
         
-        # Filtro de Bancos
-        lista_bancos = ["TODOS"] + sorted(df_final['Banco'].unique().tolist())
-        banco_sel = st.sidebar.selectbox("Filtrar por Banco", lista_bancos)
+        # Filtro de bancos interactivo
+        todos_los_bancos = df_mensual['Banco'].unique()
+        seleccion = st.multiselect("Filtrar por Banco:", todos_los_bancos, default=todos_los_bancos)
         
-        if banco_sel != "TODOS":
-            df_final = df_final[df_final['Banco'] == banco_sel]
+        df_plot = df_mensual[df_mensual['Banco'].isin(seleccion)]
 
-        # Procesamiento temporal para el eje X
-        df_final = df_final.sort_values('Fecha')
-        df_final['Periodo'] = df_final['Fecha'].dt.strftime('%Y-%m')
-        df_mensual = df_final.groupby('Periodo')['Valor'].sum().reset_index()
-
-        # --- SECCIÓN 1: KPIs ---
-        st.subheader(f"Resumen Ejecutivo: {banco_sel}")
-        m1, m2, m3, m4 = st.columns(4)
-        
-        m1.metric("Total Acumulado", f"$ {df_mensual['Valor'].sum():,.2f}")
-        m2.metric("Promedio Mensual", f"$ {df_mensual['Valor'].mean():,.2f}")
-        m3.metric("Valor Máximo", f"$ {df_mensual['Valor'].max():,.2f}")
-        m4.metric("N° Operaciones", f"{len(df_final)}")
-
-        # --- SECCIÓN 2: GRÁFICO DE TENDENCIA ---
-        st.divider()
-        st.subheader("Evolución Mensual y Línea de Tendencia")
-        
-        # Gráfico de área para estética profesional
-        fig = px.area(df_mensual, x='Periodo', y='Valor', 
-                      title=f"Tendencia de Movimientos - {banco_sel}",
-                      labels={'Periodo': 'Año-Mes', 'Valor': 'Monto ($)'},
-                      template="plotly_white",
-                      color_discrete_sequence=['#AED6F1'])
-
-        # Línea de tendencia (Regresión lineal roja)
-        fig_trend = px.scatter(df_mensual, x='Periodo', y='Valor', trendline="ols")
-        trendline = fig_trend.data[1]
-        trendline.line.color = 'red'
-        trendline.line.dash = 'dot'
-        fig.add_trace(trendline)
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Guardar imagen para el reporte
-        fig.write_image("temp_report.png")
-
-        # --- SECCIÓN 3: ACCIONES Y EXPORTACIÓN ---
-        st.divider()
-        c_acc1, c_acc2 = st.columns(2)
-        
-        with c_acc1:
-            if st.button("📊 Analizar Patrones y Estadísticas"):
-                st.write(df_mensual['Valor'].describe())
-        
-        with c_acc2:
-            stats_dict = df_mensual['Valor'].describe().to_dict()
-            pdf_bytes = generar_reporte_pdf(hoja_sel, banco_sel, stats_dict, "temp_report.png")
-            st.download_button(
-                label="📄 Descargar Informe Ejecutivo PDF",
-                data=pdf_bytes,
-                file_name=f"Reporte_{banco_sel}_{hoja_sel}.pdf",
-                mime="application/pdf"
+        if not df_plot.empty:
+            fig = px.line(
+                df_plot, 
+                x="Mes", 
+                y="Costo", 
+                color="Banco",
+                markers=True,
+                line_shape="linear",
+                labels={"Costo": "Valor Total", "Mes": "Periodo"},
+                template="plotly_dark"
             )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Resumen en tabla
+            with st.expander("Ver tabla de datos detallada"):
+                st.write(df_plot)
+        else:
+            st.warning("No hay datos para mostrar con los filtros seleccionados.")
 
     except Exception as e:
-        st.error(f"Error al procesar las columnas B, D o G. Revisa el formato del Excel. Detalle: {e}")
-
+        st.error(f"Error al procesar el archivo: {e}")
+        st.info("Asegúrate de que las columnas B, D y G contengan datos válidos.")
 else:
-    st.info("👋 Sube un archivo Excel para iniciar el análisis de movimientos bancarios.")
+    st.info("Esperando archivo... Recuerda que la columna B debe ser el Banco, D la Fecha y G el Costo.")
