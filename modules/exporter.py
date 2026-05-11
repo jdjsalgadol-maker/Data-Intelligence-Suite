@@ -2,7 +2,7 @@ import io
 from fpdf import FPDF
 
 def generar_pdf(texto_narrativa, df_ranking, figuras_dict):
-    """Compila narrativa, tabla y graficos en un PDF con diseno corporativo a color."""
+    """Compila narrativa, tabla y graficos en un PDF a color sin caracteres especiales."""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     
@@ -44,8 +44,8 @@ def generar_pdf(texto_narrativa, df_ranking, figuras_dict):
     pdf.set_font("helvetica", "", 10)
     pdf.set_text_color(*GRIS_TEXTO)
     
-    # 💡 FILTRO AUTOMATICO: Borra Markdown y purga cualquier emoji (como el pin) 
-    # incompatible con Helvetica, manteniendo el codigo fuente limpio de caracteres raros.
+    # FILTRO AUTOMATICO: Borra Markdown y purga cualquier caracter especial o emoji
+    # incompatible con Helvetica, manteniendo el codigo fuente en formato ASCII puro.
     texto_limpio = texto_narrativa.replace("**", "").replace("### ", "")
     texto_limpio = texto_limpio.encode('latin-1', 'ignore').decode('latin-1').strip()
     
@@ -79,7 +79,7 @@ def generar_pdf(texto_narrativa, df_ranking, figuras_dict):
         pdf.set_text_color(*GRIS_TEXTO)
         pdf.set_draw_color(220, 220, 220)
         
-        # Filtro de seguridad tambien para los nombres de los bancos
+        # Filtro de seguridad para los nombres de los bancos
         banco_str = str(fila['Banco']).encode('latin-1', 'ignore').decode('latin-1')
         
         pdf.cell(110, 8, f"  {banco_str}", border="B", fill=fill)
@@ -106,4 +106,10 @@ def generar_pdf(texto_narrativa, df_ranking, figuras_dict):
         pdf.set_font("helvetica", "B", 10)
         pdf.set_text_color(80, 80, 80)
         pdf.cell(0, 6, f"- {titulo}", ln=True)
-        pdf.image(img_buffer
+        pdf.image(img_buffer, x=15, w=180)
+        pdf.ln(5)
+        
+    buffer = io.BytesIO()
+    pdf.output(buffer)
+    buffer.seek(0)
+    return buffer
