@@ -1,18 +1,13 @@
-import streamlit as st
-from modules.data_processor import clean_and_prepare_data, get_summaries
-from modules.visuals import render_charts
 import os
 import sys
+import streamlit as st
 
-# Forzar a Python a reconocer la carpeta raíz en la nube
+# Forzar al servidor de la nube a reconocer la carpeta actual
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# --- Ahora sí, tus importaciones habituales ---
-import streamlit as st
 from modules.data_processor import clean_and_prepare_data, get_summaries
 from modules.visuals import render_charts
 
-# (El resto de tu código continúa igual...)
 st.set_page_config(page_title="Dashboard Financiero Pro", layout="wide")
 
 st.title("🏦 Panel de Control: Análisis de Costos Bancarios")
