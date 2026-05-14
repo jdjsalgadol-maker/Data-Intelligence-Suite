@@ -61,11 +61,12 @@ if archivo:
             ]
 
             if not df_filt.empty:
-                # 3. CÁLCULOS Y GENERACIÓN DE GRÁFICOS
+               # 3. CALCULOS Y GENERACION DE GRAFICOS
+                # Cambiamos f_scatter por f_proy
                 df_ranking, df_mensual = get_summaries(df_filt)
-                f_bar, f_pie, f_scatter, f_line = render_charts(df_filt, df_ranking, df_mensual)
+                f_bar, f_pie, f_proy, f_line = render_charts(df_filt, df_ranking, df_mensual)
                 
-                # 4. STORYTELLING AUTOMÁTICO (Análisis de tendencia y proyecciones)
+                # 4. STORYTELLING AUTOMATICO
                 texto_storytelling = generar_narrativa(df_filt, df_ranking, df_mensual)
 
                 # --- SECCIÓN SUPERIOR: MÉTRICAS CLAVE (KPIs) ---
@@ -90,12 +91,12 @@ if archivo:
                     st.subheader("📥 Generar Reporte Oficial")
                     st.info("Compila un documento formal a color con la narrativa, la tabla neta y los 4 gráficos estáticos.")
                     
-                    # Empaquetamos las figuras para enviarlas al exportador PDF
+                # Empaquetamos las figuras para enviarlas al exportador PDF
                     dict_figs = {
                         "Ranking Neto Acumulado": f_bar,
-                        "Distribución de Carga": f_pie,
-                        "Análisis de Dispersión y Ajustes": f_scatter,
-                        "Evolución y Tendencia Temporal": f_line
+                        "Distribucion de Carga": f_pie,
+                        "Proyeccion Estimada a 3 Meses": f_proy, # <--- Enviamos la proyeccion
+                        "Evolucion y Tendencia Temporal": f_line
                     }
 
                     # Generación del PDF en memoria
@@ -113,7 +114,7 @@ if archivo:
 
                 st.divider()
 
-                # --- SECCIÓN INFERIOR: VISUALIZACIÓN INTERACTIVA ---
+                # --- SECCION INFERIOR: VISUALIZACION INTERACTIVA ---
                 st.subheader("📊 Panel de Gráficos Interactivos")
                 
                 fila1_col1, fila1_col2 = st.columns(2)
@@ -122,7 +123,8 @@ if archivo:
                 with fila1_col2:
                     st.plotly_chart(f_pie, use_container_width=True)
 
-                st.plotly_chart(f_scatter, use_container_width=True)
+                # Reemplazamos la llamada de f_scatter por f_proy
+                st.plotly_chart(f_proy, use_container_width=True)
                 st.plotly_chart(f_line, use_container_width=True)
 
             else:
