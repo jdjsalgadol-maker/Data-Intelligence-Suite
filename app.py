@@ -2,111 +2,88 @@ import os
 import sys
 import streamlit as st
 
-# --- CONFIGURACIÓN DE RUTAS PARA STREAMLIT CLOUD ---
-# Asegura que el servidor Linux encuentre la carpeta 'modules'
+# --- CONFIGURACION DE RUTAS PARA STREAMLIT CLOUD ---
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Importación de nuestros módulos especializados
+# Importacion de modulos especializados
 from modules.data_processor import clean_and_prepare_data, get_summaries
 from modules.visuals import render_charts
 from modules.storyteller import generar_narrativa
 from modules.exporter import generar_pdf
 
-# --- CONFIGURACIÓN DE LA INTERFAZ ---
+# --- CONFIGURACION DE LA INTERFAZ ---
 st.set_page_config(
     page_title="Data Intelligence Suite", 
     layout="wide", 
-    page_icon="🏦"
+    page_icon="banking"
 )
 
-# Título y descripción general
-st.title("🏦 Dashboard de Inteligencia Financiera")
-st.markdown("""
-    **Analizador de Costos Bancarios Multipestaña.** Este sistema consolida automáticamente las entidades (Columna B), 
-    fechas (Columna D) y costos netos (Columna G) de todas las hojas de tu reporte para generar diagnósticos y proyecciones.
-""")
+# --- FUNCION DE CACHE PARA EL PDF ---
+# Esta funcion evita que el PDF se regenere innecesariamente
+@st.cache_data(show_spinner=False)
+def obtener_pdf_optimizado(texto, ranking, figs):
+    return generar_pdf(texto, ranking, figs)
 
-# --- CARGA DE DATOS ---
-archivo = st.file_uploader("📂 Sube tu reporte bancario (Excel o CSV)", type=["xlsx", "csv"])
+# Titulo y descripcion
+st.title("Data Intelligence Suite")
+st.markdown("Analizador de Costos Bancarios Multipestana.")
+
+archivo = st.file_uploader("Subir reporte (Excel o CSV)", type=["xlsx", "csv"])
 
 if archivo:
     try:
-        # 1. PROCESAMIENTO MODULAR (Extrae datos de todas las pestañas)
         df = clean_and_prepare_data(archivo)
 
         if not df.empty:
-            # --- 2. BARRA LATERAL (Filtros Combinados) ---
-            st.sidebar.header("⚙️ Configuración del Análisis")
+            # --- FILTROS ---
+            st.sidebar.header("Configuracion")
             
-            # Filtro A: Origen / Pestañas (Categoría)
-            categorias_disponibles = sorted(df['Categoría'].unique())
-            seleccion_categorias = st.sidebar.multiselect(
-                "📁 Filtrar por Pestaña / Origen:", 
-                options=categorias_disponibles, 
-                default=categorias_disponibles
-            )
+            cats = sorted(df['Categoria'].unique())
+            sel_cats = st.sidebar.multiselect("Filtrar por Pestana:", options=cats, default=cats)
             
-            # Filtro B: Entidades Bancarias
-            bancos_disponibles = sorted(df['Banco'].unique())
-            seleccion_bancos = st.sidebar.multiselect(
-                "🏦 Filtrar por Entidad:", 
-                options=bancos_disponibles, 
-                default=bancos_disponibles
-            )
+            bancos = sorted(df['Banco'].unique())
+            sel_bancos = st.sidebar.multiselect("Filtrar por Entidad:", options=bancos, default=bancos)
             
-            # Aplicar ambos filtros cruzados
-            df_filt = df[
-                (df['Banco'].isin(seleccion_bancos)) & 
-                (df['Categoría'].isin(seleccion_categorias))
-            ]
+            df_filt = df[(df['Banco'].isin(sel_bancos)) & (df['Categoria'].isin(sel_cats))]
 
             if not df_filt.empty:
-               # 3. CALCULOS Y GENERACION DE GRAFICOS
-                # Cambiamos f_scatter por f_proy
+                # 1. CALCULOS
                 df_ranking, df_mensual = get_summaries(df_filt)
                 f_bar, f_pie, f_proy, f_line = render_charts(df_filt, df_ranking, df_mensual)
-                
-                # 4. STORYTELLING AUTOMATICO
                 texto_storytelling = generar_narrativa(df_filt, df_ranking, df_mensual)
 
-                # --- SECCIÓN SUPERIOR: MÉTRICAS CLAVE (KPIs) ---
-                col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-                
-                total_neto = df_filt['Costo'].sum()
-                banco_lider = df_ranking.iloc[0]['Banco'] if not df_ranking.empty else "N/A"
-                
-                col_kpi1.metric("Gasto Neto Total", f"$ {total_neto:,.2f}")
-                col_kpi2.metric("Entidad Mayoritaria", banco_lider)
-                col_kpi3.metric("Movimientos Procesados", len(df_filt))
+                # 2. METRICAS
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Gasto Neto Total", f"$ {df_filt['Costo'].sum():,.2f}")
+                c2.metric("Entidad Mayoritaria", df_ranking.iloc[0]['Banco'] if not df_ranking.empty else "N/A")
+                c3.metric("Registros", len(df_filt))
 
                 st.divider()
 
-                # --- SECCIÓN MEDIA: STORYTELLING Y DESCARGA DEL PDF ---
+                # 3. STORYTELLING Y PDF
                 col_story, col_pdf = st.columns([2, 1])
 
                 with col_story:
                     st.markdown(texto_storytelling)
 
                 with col_pdf:
-                    st.subheader("📥 Generar Reporte Oficial")
-                    st.info("Compila un documento formal a color con la narrativa, la tabla neta y los 4 gráficos estáticos.")
+                    st.subheader("Reporte Oficial")
                     
-                # Empaquetamos las figuras para enviarlas al exportador PDF
                     dict_figs = {
-                        "Ranking Neto Acumulado": f_bar,
-                        "Distribucion de Carga": f_pie,
-                        "Proyeccion Estimada a 3 Meses": f_proy, # <--- Enviamos la proyeccion
-                        "Evolucion y Tendencia Temporal": f_line
+                        "Ranking": f_bar,
+                        "Participacion": f_pie,
+                        "Proyeccion": f_proy,
+                        "Tendencia": f_line
                     }
 
-                    # Generación del PDF en memoria
-                    with st.spinner("Procesando imágenes y diseño corporativo..."):
-                        pdf_output = generar_pdf(texto_storytelling, df_ranking, dict_figs)
+                    # Generamos el PDF usando el Cache
+                    with st.spinner("Preparando documento..."):
+                        pdf_output = obtener_pdf_optimizado(texto_storytelling, df_ranking, dict_figs)
                     
                     st.download_button(
-                        label="📄 Descargar Reporte en PDF",
+                        label="Descargar Reporte en PDF",
                         data=pdf_output,
-                        file_name=f"Reporte_Financiero_{archivo.name.split('.')[0]}.pdf",
+                        file_name=f"Reporte_{archivo.name.split('.')[0]}.pdf",
                         mime="application/pdf",
                         type="primary",
                         use_container_width=True
@@ -114,28 +91,18 @@ if archivo:
 
                 st.divider()
 
-                # --- SECCION INFERIOR: VISUALIZACION INTERACTIVA ---
-                st.subheader("📊 Panel de Gráficos Interactivos")
-                
-                fila1_col1, fila1_col2 = st.columns(2)
-                with fila1_col1:
-                    st.plotly_chart(f_bar, use_container_width=True)
-                with fila1_col2:
-                    st.plotly_chart(f_pie, use_container_width=True)
-
-                # Reemplazamos la llamada de f_scatter por f_proy
+                # 4. GRAFICOS
+                st.subheader("Panel Interactivo")
+                f1, f2 = st.columns(2)
+                f1.plotly_chart(f_bar, use_container_width=True)
+                f2.plotly_chart(f_pie, use_container_width=True)
                 st.plotly_chart(f_proy, use_container_width=True)
                 st.plotly_chart(f_line, use_container_width=True)
 
             else:
-                st.warning("⚠️ No hay datos para mostrar con la combinación de filtros seleccionada.")
+                st.warning("No hay datos para la seleccion.")
         else:
-            st.error("❌ El archivo no contiene registros válidos en las columnas requeridas (B, D y G).")
+            st.error("Archivo sin registros validos.")
 
     except Exception as e:
-        st.error(f"❌ Error Técnico al procesar el archivo: {e}")
-        st.info("Verifica que las hojas del Excel sigan la estructura estándar.")
-
-else:
-    # Pantalla de inicio
-    st.info("👋 Bienvenido. Carga tu reporte en el panel superior para procesar todas las pestañas de forma consolidada.")
+        st.error(f"Error: {e}")
